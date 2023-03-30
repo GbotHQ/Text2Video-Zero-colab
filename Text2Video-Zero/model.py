@@ -1,7 +1,6 @@
 import gc
 import numpy as np
 
-from tqdm import tqdm
 import torch
 from diffusers import StableDiffusionControlNetPipeline, ControlNetModel
 from diffusers.schedulers import DDIMScheduler
@@ -10,13 +9,14 @@ import utils
 
 
 class Model:
-    def __init__(self, device, dtype):
+    def __init__(self, device, dtype, **kwargs):
         self.device = device
         self.dtype = dtype
         self.generator = torch.Generator(device=device)
         self.controlnet_attn_proc = utils.CrossFrameAttnProcessor(unet_chunk_size=2)
 
         self.pipe = None
+        self.initialized = False
 
     def set_model(self, model_id: str, **kwargs):
         if self.pipe:
@@ -24,86 +24,76 @@ class Model:
 
         torch.cuda.empty_cache()
         gc.collect()
-        self.pipe = StableDiffusionControlNetPipeline.from_pretrained(
-            model_id, safety_checker=None, **kwargs
-        ).to(self.device, self.dtype)
-
-    def run_pipe(self, prompt, negative_prompt, **kwargs):
-        return self.pipe(
-            prompt=prompt,
-            negative_prompt=negative_prompt,
-            generator=self.generator,
-            **kwargs,
-        ).images
+        safety_checker = kwargs.pop("safety_checker", None)
+        self.pipe = (
+            StableDiffusionControlNetPipeline.from_pretrained(
+                model_id, safety_checker=safety_checker, **kwargs
+            )
+            .to(self.device)
+            .to(self.dtype)
+        )
 
     def inference_chunk(self, frame_ids, **kwargs):
         if not self.pipe:
             return
 
-        prompt = np.array(kwargs.pop("prompt"))[frame_ids].tolist()
-        negative_prompt = np.array(kwargs.pop("negative_prompt", ""))[
-            frame_ids
-        ].tolist()
+        prompt = np.array(kwargs.pop("prompt"))
+        negative_prompt = np.array(kwargs.pop("negative_prompt", ""))
+        latents = None
 
         if "latents" in kwargs:
-            kwargs["latents"] = kwargs["latents"][frame_ids]
+            latents = kwargs.pop("latents")[frame_ids]
         if "image" in kwargs:
             kwargs["image"] = kwargs["image"][frame_ids]
         if "video_length" in kwargs:
             kwargs["video_length"] = len(frame_ids)
 
-        return self.run_pipe(prompt, negative_prompt, **kwargs)
+        return self.pipe(
+            prompt=prompt[frame_ids].tolist(),
+            negative_prompt=negative_prompt[frame_ids].tolist(),
+            latents=latents,
+            generator=self.generator,
+            **kwargs,
+        )
 
     def inference(self, split_to_chunks=False, chunk_size=8, **kwargs):
         if self.pipe is None:
             return
-
         seed = kwargs.pop("seed", 0)
         if seed < 0:
             seed = self.generator.seed()
         kwargs.pop("generator", "")
 
-        length = (
-            kwargs["image"].shape[0] if "image" in kwargs else kwargs["video_length"]
-        )
-
+        f = kwargs["image"].shape[0] if "image" in kwargs else kwargs["video_length"]
         assert "prompt" in kwargs
-        prompt = [kwargs.pop("prompt")] * length
-        negative_prompt = [kwargs.pop("negative_prompt", "")] * length
+        prompt = [kwargs.pop("prompt")] * f
+        negative_prompt = [kwargs.pop("negative_prompt", "")] * f
 
         if not split_to_chunks:
-            return self.run_pipe(prompt, negative_prompt, **kwargs)
+            return self.pipe(
+                prompt=prompt,
+                negative_prompt=negative_prompt,
+                generator=self.generator,
+                **kwargs,
+            ).images
 
-        chunk_ids = np.append(np.arange(0, length, chunk_size - 1), length)
-
+        chunk_ids = np.arange(0, f, chunk_size - 1)
         result = []
-        for i in tqdm(range(len(chunk_ids) - 1), "Processing chunk"):
+        for i in range(len(chunk_ids)):
+            ch_start = chunk_ids[i]
+            ch_end = f if i == len(chunk_ids) - 1 else chunk_ids[i + 1]
+            frame_ids = [0] + list(range(ch_start, ch_end))
             self.generator.manual_seed(seed)
-            frame_ids = [0] + list(range(chunk_ids[i], chunk_ids[i + 1]))
-
+            print(f"Processing chunk {i + 1} / {len(chunk_ids)}")
             result.append(
                 self.inference_chunk(
                     frame_ids=frame_ids,
                     prompt=prompt,
                     negative_prompt=negative_prompt,
                     **kwargs,
-                )[1:]
+                ).images[1:]
             )
         return np.concatenate(result)
-
-    def init_controlnet_model(self, use_cf_attn):
-        if self.pipe:
-            return
-
-        controlnet = ControlNetModel.from_pretrained("lllyasviel/sd-controlnet-canny")
-        self.set_model(
-            model_id="runwayml/stable-diffusion-v1-5",
-            controlnet=controlnet,
-        )
-        self.pipe.scheduler = DDIMScheduler.from_config(self.pipe.scheduler.config)
-        if use_cf_attn:
-            self.pipe.unet.set_attn_processor(processor=self.controlnet_attn_proc)
-            self.pipe.controlnet.set_attn_processor(processor=self.controlnet_attn_proc)
 
     def process_controlnet_canny(
         self,
@@ -121,10 +111,25 @@ class Model:
         use_cf_attn=True,
         save_path=None,
     ):
-        self.init_controlnet_model(use_cf_attn)
+        if not self.initialized:
+            controlnet = ControlNetModel.from_pretrained(
+                "lllyasviel/sd-controlnet-canny"
+            )
+            self.set_model(
+                model_id="runwayml/stable-diffusion-v1-5",
+                controlnet=controlnet,
+            )
+            self.pipe.scheduler = DDIMScheduler.from_config(self.pipe.scheduler.config)
+            if use_cf_attn:
+                self.pipe.unet.set_attn_processor(processor=self.controlnet_attn_proc)
+                self.pipe.controlnet.set_attn_processor(
+                    processor=self.controlnet_attn_proc
+                )
 
-        negative_prompt = "longbody, lowres, bad anatomy, bad hands, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality"
-        prompt = f"{prompt}, best quality, extremely detailed"
+            self.initialized = True
+
+        added_prompt = "best quality, extremely detailed"
+        negative_prompts = "longbody, lowres, bad anatomy, bad hands, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality"
 
         video, fps = utils.prepare_video(
             video_path, resolution, self.device, self.dtype, False
@@ -145,10 +150,10 @@ class Model:
         latents = latents.repeat(f, 1, 1, 1)
         result = self.inference(
             image=control,
-            prompt=prompt,
+            prompt=f"{prompt}, {added_prompt}",
             height=h,
             width=w,
-            negative_prompt=negative_prompt,
+            negative_prompt=negative_prompts,
             num_inference_steps=num_inference_steps,
             guidance_scale=guidance_scale,
             controlnet_conditioning_scale=controlnet_conditioning_scale,
