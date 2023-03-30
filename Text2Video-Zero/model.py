@@ -135,7 +135,6 @@ class Model:
         video_path,
         prompt,
         chunk_size=8,
-        watermark="Picsart AI Research",
         num_inference_steps=20,
         controlnet_conditioning_scale=1.0,
         guidance_scale=9.0,
