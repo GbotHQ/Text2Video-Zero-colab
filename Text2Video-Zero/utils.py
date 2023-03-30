@@ -48,7 +48,7 @@ def pre_process_canny(input_video, low_threshold=100, high_threshold=200):
     for frame in input_video:
         img = rearrange(frame, "c h w -> h w c").cpu().numpy().astype(np.uint8)
         detected_map = cv2.Canny(img, low_threshold, high_threshold)
-        detected_map = to_rgb(detected_map)
+        detected_map = HWC3(detected_map)
         detected_maps.append(detected_map[None])
     detected_maps = np.concatenate(detected_maps)
 
@@ -105,9 +105,9 @@ def prepare_video(
 ):
     vr = decord.VideoReader(video_path)
     initial_fps = vr.get_avg_fps()
-    if output_fps == -1:
+    if not output_fps:
         output_fps = int(initial_fps)
-    if end_t == -1:
+    if not end_t:
         end_t = len(vr) / initial_fps
     else:
         end_t = min(len(vr) / initial_fps, end_t)
