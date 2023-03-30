@@ -1,2 +1,2 @@
-# Text2Video-Zero colab
+# Text2Video-Zero-colab
  
