@@ -1,25 +1,4 @@
 # App Canny utils
-def edge_path_to_video_path(edge_path):
-    video_path = edge_path
-
-    vid_name = edge_path.split("/")[-1]
-    if vid_name == "butterfly.mp4":
-        video_path = "__assets__/canny_videos_mp4_2fps/butterfly.mp4"
-    elif vid_name == "deer.mp4":
-        video_path = "__assets__/canny_videos_mp4_2fps/deer.mp4"
-    elif vid_name == "fox.mp4":
-        video_path = "__assets__/canny_videos_mp4_2fps/fox.mp4"
-    elif vid_name == "girl_dancing.mp4":
-        video_path = "__assets__/canny_videos_mp4_2fps/girl_dancing.mp4"
-    elif vid_name == "girl_turning.mp4":
-        video_path = "__assets__/canny_videos_mp4_2fps/girl_turning.mp4"
-    elif vid_name == "halloween.mp4":
-        video_path = "__assets__/canny_videos_mp4_2fps/halloween.mp4"
-    elif vid_name == "santa.mp4":
-        video_path = "__assets__/canny_videos_mp4_2fps/santa.mp4"
-    return video_path
-
-
 def motion_to_video_path(motion):
     videos = [
         "__assets__/poses_skeleton_gifs/dance1_corr.mp4",
@@ -76,14 +55,3 @@ def get_db_name_from_id(id):
 def get_canny_name_from_id(id):
     canny_names = ["woman1", "woman2", "man1", "woman3"]
     return canny_names[id]
-
-
-def logo_name_to_path(name):
-    logo_paths = {
-        'Picsart AI Research': '__assets__/pair_watermark.png',
-        'Text2Video-Zero': '__assets__/t2v-z_watermark.png',
-        'None': None
-    }
-    if name in logo_paths:
-        return logo_paths[name]
-    return name
