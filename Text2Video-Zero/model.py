@@ -5,17 +5,8 @@ import numpy as np
 import torch
 from diffusers import StableDiffusionControlNetPipeline, ControlNetModel
 from diffusers.schedulers import DDIMScheduler
-from text_to_video.text_to_video_pipeline import TextToVideoPipeline
 
 import utils
-
-
-class ModelType(Enum):
-    Pix2Pix_Video = (1,)
-    Text2Video = (2,)
-    ControlNetCanny = (3,)
-    ControlNetCannyDB = (4,)
-    ControlNetPose = (5,)
 
 
 class Model:
@@ -26,13 +17,12 @@ class Model:
         self.controlnet_attn_proc = utils.CrossFrameAttnProcessor(unet_chunk_size=2)
 
         self.pipe = None
-        self.model_type = None
+        self.initialized = False
 
-        self.states = {}
-
-    def set_model(self, model_type: ModelType, model_id: str, **kwargs):
-        if self.pipe is not None:
+    def set_model(self, model_id: str, **kwargs):
+        if self.pipe:
             del self.pipe
+
         torch.cuda.empty_cache()
         gc.collect()
         safety_checker = kwargs.pop("safety_checker", None)
@@ -43,23 +33,22 @@ class Model:
             .to(self.device)
             .to(self.dtype)
         )
-        self.model_type = model_type
 
     def inference_chunk(self, frame_ids, **kwargs):
-        if self.pipe is None:
+        if not self.pipe:
             return
 
         prompt = np.array(kwargs.pop("prompt"))
         negative_prompt = np.array(kwargs.pop("negative_prompt", ""))
         latents = None
+
         if "latents" in kwargs:
             latents = kwargs.pop("latents")[frame_ids]
         if "image" in kwargs:
             kwargs["image"] = kwargs["image"][frame_ids]
         if "video_length" in kwargs:
             kwargs["video_length"] = len(frame_ids)
-        if self.model_type == ModelType.Text2Video:
-            kwargs["frame_ids"] = frame_ids
+
         return self.pipe(
             prompt=prompt[frame_ids].tolist(),
             negative_prompt=negative_prompt[frame_ids].tolist(),
@@ -123,12 +112,11 @@ class Model:
         use_cf_attn=True,
         save_path=None,
     ):
-        if self.model_type != ModelType.ControlNetCanny:
+        if not self.initialized:
             controlnet = ControlNetModel.from_pretrained(
                 "lllyasviel/sd-controlnet-canny"
             )
             self.set_model(
-                ModelType.ControlNetCanny,
                 model_id="runwayml/stable-diffusion-v1-5",
                 controlnet=controlnet,
             )
@@ -138,6 +126,8 @@ class Model:
                 self.pipe.controlnet.set_attn_processor(
                     processor=self.controlnet_attn_proc
                 )
+
+            self.initialized = True
 
         added_prompt = "best quality, extremely detailed"
         negative_prompts = "longbody, lowres, bad anatomy, bad hands, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality"
