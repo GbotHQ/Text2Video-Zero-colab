@@ -24,8 +24,6 @@ class Model:
         self.dtype = dtype
         self.generator = torch.Generator(device=device)
         self.controlnet_attn_proc = utils.CrossFrameAttnProcessor(unet_chunk_size=2)
-        self.pix2pix_attn_proc = utils.CrossFrameAttnProcessor(unet_chunk_size=3)
-        self.text2video_attn_proc = utils.CrossFrameAttnProcessor(unet_chunk_size=2)
 
         self.pipe = None
         self.model_type = None
@@ -78,42 +76,36 @@ class Model:
             seed = self.generator.seed()
         kwargs.pop("generator", "")
 
-        if "image" in kwargs:
-            f = kwargs["image"].shape[0]
-        else:
-            f = kwargs["video_length"]
-
+        f = kwargs["image"].shape[0] if "image" in kwargs else kwargs["video_length"]
         assert "prompt" in kwargs
         prompt = [kwargs.pop("prompt")] * f
         negative_prompt = [kwargs.pop("negative_prompt", "")] * f
 
-        # Processing chunk-by-chunk
-        if split_to_chunks:
-            chunk_ids = np.arange(0, f, chunk_size - 1)
-            result = []
-            for i in range(len(chunk_ids)):
-                ch_start = chunk_ids[i]
-                ch_end = f if i == len(chunk_ids) - 1 else chunk_ids[i + 1]
-                frame_ids = [0] + list(range(ch_start, ch_end))
-                self.generator.manual_seed(seed)
-                print(f"Processing chunk {i + 1} / {len(chunk_ids)}")
-                result.append(
-                    self.inference_chunk(
-                        frame_ids=frame_ids,
-                        prompt=prompt,
-                        negative_prompt=negative_prompt,
-                        **kwargs,
-                    ).images[1:]
-                )
-            result = np.concatenate(result)
-            return result
-        else:
+        if not split_to_chunks:
             return self.pipe(
                 prompt=prompt,
                 negative_prompt=negative_prompt,
                 generator=self.generator,
                 **kwargs,
             ).images
+
+        chunk_ids = np.arange(0, f, chunk_size - 1)
+        result = []
+        for i in range(len(chunk_ids)):
+            ch_start = chunk_ids[i]
+            ch_end = f if i == len(chunk_ids) - 1 else chunk_ids[i + 1]
+            frame_ids = [0] + list(range(ch_start, ch_end))
+            self.generator.manual_seed(seed)
+            print(f"Processing chunk {i + 1} / {len(chunk_ids)}")
+            result.append(
+                self.inference_chunk(
+                    frame_ids=frame_ids,
+                    prompt=prompt,
+                    negative_prompt=negative_prompt,
+                    **kwargs,
+                ).images[1:]
+            )
+        return np.concatenate(result)
 
     def process_controlnet_canny(
         self,
@@ -169,7 +161,7 @@ class Model:
         latents = latents.repeat(f, 1, 1, 1)
         result = self.inference(
             image=control,
-            prompt=prompt + ", " + added_prompt,
+            prompt=f"{prompt}, {added_prompt}",
             height=h,
             width=w,
             negative_prompt=negative_prompts,
@@ -183,4 +175,4 @@ class Model:
             split_to_chunks=True,
             chunk_size=chunk_size,
         )
-        return utils.create_video(result, fps, path=save_path, watermark=None)
+        return utils.create_video(result, fps, path=save_path)
