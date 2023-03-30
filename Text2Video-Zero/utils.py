@@ -76,13 +76,13 @@ def prepare_video(
     end_t: float = None,
     output_fps: int = None,
 ):
-    vr = decord.VideoReader(video_path)
-    initial_fps = vr.get_avg_fps()
+    reader = decord.VideoReader(video_path)
+    initial_fps = reader.get_avg_fps()
 
     if not output_fps:
         output_fps = int(initial_fps)
 
-    length = len(vr) / initial_fps
+    length = len(reader) / initial_fps
     if not end_t:
         end_t = length
     end_t = min(length, end_t)
@@ -96,20 +96,20 @@ def prepare_video(
     sample_idx = np.linspace(
         int(start_f_ind), int(end_f_ind), int(num_f), endpoint=False
     ).astype(int)
-    video = vr.get_batch(sample_idx)
+    video = reader.get_batch(sample_idx)
 
     video = video.detach().cpu().numpy() if torch.is_tensor(video) else video.asnumpy()
-
     video = rearrange(video, "f h w c -> f c h w")
     video = torch.Tensor(video).to(device, dtype)
 
     # resample to resolution
-    hw = np.array(video.shape[1:3], np.int32)
-    scale = np.amax(hw) / resolution
-    hw = (hw // scale).astype(np.int32)
+    hw = np.array(video.shape[2:], np.int32)
+    hw = (hw // (np.amax(hw) / resolution)).astype(np.int32)
     hw -= hw % 8
 
-    video = Resize(hw, interpolation=InterpolationMode.BILINEAR, antialias=True)(video)
+    video = Resize(
+        (hw[0], hw[1]), interpolation=InterpolationMode.BILINEAR, antialias=True
+    )(video)
     return video / 127.5 - 1.0 if normalize else video, output_fps
 
 
@@ -139,9 +139,11 @@ class CrossFrameAttnProcessor:
             # former_frame_index = torch.arange(video_length) - 1
             # former_frame_index[0] = 0
             former_frame_index = [0] * video_length
+
             key = rearrange(key, "(b f) d c -> b f d c", f=video_length)
             key = key[:, former_frame_index]
             key = rearrange(key, "b f d c -> (b f) d c")
+
             value = rearrange(value, "(b f) d c -> b f d c", f=video_length)
             value = value[:, former_frame_index]
             value = rearrange(value, "b f d c -> (b f) d c")
