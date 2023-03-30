@@ -1,4 +1,3 @@
-from enum import Enum
 import gc
 import numpy as np
 
