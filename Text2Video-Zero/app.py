@@ -16,6 +16,7 @@ def create_demo(model: Model):
                 ).style(height="auto")
             with gr.Column():
                 prompt = gr.Textbox(label="Prompt")
+                negative_prompt = gr.Textbox(label="Negative Prompt", value="longbody, lowres, bad anatomy, bad hands, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality")
                 run_button = gr.Button(label="Run")
                 with gr.Accordion("Advanced options", open=False):
                     chunk_size = gr.Slider(
@@ -27,6 +28,7 @@ def create_demo(model: Model):
         inputs = [
             input_video,
             prompt,
+            negative_prompt,
             chunk_size,
         ]
 

@@ -47,8 +47,10 @@ class Model:
         if not self.pipe:
             return
 
-        prompt = np.array(kwargs.pop("prompt"))
-        negative_prompt = np.array(kwargs.pop("negative_prompt", ""))
+        prompt = np.array(kwargs.pop("prompt"))[frame_ids].tolist()
+        negative_prompt = np.array(kwargs.pop("negative_prompt", ""))[
+            frame_ids
+        ].tolist()
 
         if "latents" in kwargs:
             kwargs["latents"] = kwargs["latents"][frame_ids]
@@ -58,8 +60,8 @@ class Model:
             kwargs["video_length"] = len(frame_ids)
 
         return self.run_model(
-            prompt=prompt[frame_ids].tolist(),
-            negative_prompt=negative_prompt[frame_ids].tolist(),
+            prompt=prompt,
+            negative_prompt=negative_prompt,
             **kwargs,
         )
 
@@ -71,10 +73,13 @@ class Model:
             seed = self.generator.seed()
         kwargs.pop("generator", "")
 
-        f = kwargs["image"].shape[0] if "image" in kwargs else kwargs["video_length"]
+        length = (
+            kwargs["image"].shape[0] if "image" in kwargs else kwargs["video_length"]
+        )
+
         assert "prompt" in kwargs
-        prompt = [kwargs.pop("prompt")] * f
-        negative_prompt = [kwargs.pop("negative_prompt", "")] * f
+        prompt = [kwargs.pop("prompt")] * length
+        negative_prompt = [kwargs.pop("negative_prompt", "")] * length
 
         if not split_to_chunks:
             return self.run_model(
@@ -83,8 +88,7 @@ class Model:
                 **kwargs,
             )
 
-        chunk_ids = np.arange(0, f, chunk_size - 1)
-        chunk_ids = np.append(chunk_ids, f)
+        chunk_ids = np.append(np.arange(0, length, chunk_size - 1), length)
         result = []
         for i in tqdm(range(len(chunk_ids) - 1), "Processing chunk"):
             frame_ids = [0] + list(range(chunk_ids[i], chunk_ids[i + 1]))
@@ -103,6 +107,7 @@ class Model:
         self,
         video_path,
         prompt,
+        negative_prompt,
         chunk_size=8,
         num_inference_steps=20,
         controlnet_conditioning_scale=1.0,
@@ -132,17 +137,11 @@ class Model:
 
             self.initialized = True
 
-        added_prompt = "best quality, extremely detailed"
-        negative_prompts = "longbody, lowres, bad anatomy, bad hands, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality"
-
         video, fps = utils.prepare_video(
             video_path, resolution, self.device, self.dtype, False
         )
-        control = (
-            utils.pre_process_canny(video, low_threshold, high_threshold)
-            .to(self.device)
-            .to(self.dtype)
-        )
+        control = utils.pre_process_canny(video, low_threshold, high_threshold).to(self.device, self.dtype)
+
         f, _, h, w = video.shape
         self.generator.manual_seed(seed)
         latents = torch.randn(
@@ -154,10 +153,10 @@ class Model:
         latents = latents.repeat(f, 1, 1, 1)
         result = self.inference(
             image=control,
-            prompt=f"{prompt}, {added_prompt}",
+            prompt=prompt,
             height=h,
             width=w,
-            negative_prompt=negative_prompts,
+            negative_prompt=negative_prompt,
             num_inference_steps=num_inference_steps,
             guidance_scale=guidance_scale,
             controlnet_conditioning_scale=controlnet_conditioning_scale,
