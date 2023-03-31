@@ -15,7 +15,7 @@ class Model:
         self.device = device
         self.dtype = dtype
         self.generator = torch.Generator(device=device)
-        self.controlnet_attn_proc = cross_attention.CrossFrameAttnProcessor(
+        self.controlnet_attn_proc = cross_attention.CrossFrameAttentionProcessor(
             unet_chunk_size=2
         )
 
