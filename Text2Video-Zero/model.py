@@ -1,7 +1,7 @@
 import gc
 import numpy as np
 
-import tqdm
+from tqdm import tqdm
 
 import torch
 from diffusers import StableDiffusionControlNetPipeline, ControlNetModel
