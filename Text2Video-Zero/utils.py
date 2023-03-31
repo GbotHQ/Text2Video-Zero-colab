@@ -98,12 +98,13 @@ def prepare_video(
     video = torch.Tensor(video).to(device, dtype)
 
     # resample to resolution
-    _, h, w, _ = video.shape
-    hw = np.array((h, w), np.int32)
+    hw = np.array(video.shape[2:], np.int32)
     hw = (hw // (np.amax(hw) / resolution)).astype(np.int32)
     hw -= hw % 8
 
-    video = Resize((hw[0], hw[1]), interpolation=InterpolationMode.BILINEAR, antialias=True)(video)
+    video = Resize(
+        (hw[0], hw[1]), interpolation=InterpolationMode.BILINEAR, antialias=True
+    )(video)
     return video / 127.5 - 1.0 if normalize else video, output_fps
 
 
