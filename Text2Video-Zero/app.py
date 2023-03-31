@@ -2,6 +2,7 @@ import gradio as gr
 import torch
 
 from model import Model
+from main import process_controlnet_canny
 
 
 def create_demo(model: Model):
@@ -16,19 +17,27 @@ def create_demo(model: Model):
                 ).style(height="auto")
             with gr.Column():
                 prompt = gr.Textbox(label="Prompt")
-                negative_prompt = gr.Textbox(label="Negative Prompt", value="longbody, lowres, bad anatomy, bad hands, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality")
+                negative_prompt = gr.Textbox(
+                    label="Negative Prompt",
+                    value="longbody, lowres, bad anatomy, bad hands, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality",
+                )
                 run_button = gr.Button(label="Run")
                 with gr.Accordion("Advanced options", open=False):
                     chunk_size = gr.Slider(
                         label="Chunk size", minimum=2, maximum=8, value=8, step=1
                     )
                     controlnet_conditioning_scale = gr.Slider(
-                        label="ControlNet Strength", minimum=0, maximum=2, value=1, step=0.1
+                        label="ControlNet Strength",
+                        minimum=0,
+                        maximum=2,
+                        value=1,
+                        step=0.1,
                     )
             with gr.Column():
                 result = gr.Video(label="Generated Video").style(height="auto")
 
         inputs = [
+            model,
             input_video,
             prompt,
             negative_prompt,
@@ -37,7 +46,7 @@ def create_demo(model: Model):
         ]
 
         run_button.click(
-            fn=model.process_controlnet_canny,
+            fn=process_controlnet_canny,
             inputs=inputs,
             outputs=result,
         )

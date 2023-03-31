@@ -7,18 +7,36 @@ import torch
 from diffusers import StableDiffusionControlNetPipeline, ControlNetModel
 from diffusers.schedulers import DDIMScheduler
 
-import utils
+import cross_attention
 
 
 class Model:
-    def __init__(self, device, dtype, **kwargs):
+    def __init__(self, device, dtype):
         self.device = device
         self.dtype = dtype
         self.generator = torch.Generator(device=device)
-        self.controlnet_attn_proc = utils.CrossFrameAttnProcessor(unet_chunk_size=2)
+        self.controlnet_attn_proc = cross_attention.CrossFrameAttnProcessor(
+            unet_chunk_size=2
+        )
 
         self.pipe = None
         self.initialized = False
+
+    def init_model(self, use_cf_attn):
+        if self.initialized:
+            return
+
+        controlnet = ControlNetModel.from_pretrained("lllyasviel/sd-controlnet-canny")
+        self.set_model(
+            model_id="runwayml/stable-diffusion-v1-5",
+            controlnet=controlnet,
+        )
+        self.pipe.scheduler = DDIMScheduler.from_config(self.pipe.scheduler.config)
+        if use_cf_attn:
+            self.pipe.unet.set_attn_processor(processor=self.controlnet_attn_proc)
+            self.pipe.controlnet.set_attn_processor(processor=self.controlnet_attn_proc)
+
+        self.initialized = True
 
     def set_model(self, model_id: str, **kwargs):
         if self.pipe:
@@ -103,9 +121,10 @@ class Model:
             )
         return np.concatenate(result)
 
-    def process_controlnet_canny(
+    def video_to_video(
         self,
-        video_path,
+        video,
+        control,
         prompt,
         negative_prompt,
         chunk_size=8,
@@ -114,33 +133,9 @@ class Model:
         guidance_scale=9.0,
         seed=42,
         eta=0.0,
-        low_threshold=100,
-        high_threshold=200,
-        resolution=512,
         use_cf_attn=True,
-        save_path=None,
     ):
-        if not self.initialized:
-            controlnet = ControlNetModel.from_pretrained(
-                "lllyasviel/sd-controlnet-canny"
-            )
-            self.set_model(
-                model_id="runwayml/stable-diffusion-v1-5",
-                controlnet=controlnet,
-            )
-            self.pipe.scheduler = DDIMScheduler.from_config(self.pipe.scheduler.config)
-            if use_cf_attn:
-                self.pipe.unet.set_attn_processor(processor=self.controlnet_attn_proc)
-                self.pipe.controlnet.set_attn_processor(
-                    processor=self.controlnet_attn_proc
-                )
-
-            self.initialized = True
-
-        video, fps = utils.prepare_video(
-            video_path, resolution, self.device, self.dtype, False
-        )
-        control = utils.pre_process_canny(video, low_threshold, high_threshold).to(self.device, self.dtype)
+        self.init_model(use_cf_attn)
 
         n_frames = video.shape[0]
         h, w = video.shape[2:]
@@ -152,7 +147,7 @@ class Model:
             generator=self.generator,
         )
         latents = latents.repeat(n_frames, 1, 1, 1)
-        result = self.inference(
+        return self.inference(
             image=control,
             prompt=prompt,
             negative_prompt=negative_prompt,
@@ -168,4 +163,3 @@ class Model:
             split_to_chunks=True,
             chunk_size=chunk_size,
         )
-        return utils.create_video(result, fps, path=save_path)
