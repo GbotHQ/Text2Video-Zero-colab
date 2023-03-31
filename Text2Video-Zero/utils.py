@@ -15,6 +15,10 @@ def lerp(a, b, alpha):
     return a * (1 - alpha) + b * alpha
 
 
+def to_uint(arr):
+    return (arr * 255).astype(np.uint8)
+
+
 def make_rgb(arr):
     assert arr.dtype == np.uint8
     if arr.ndim == 2:
@@ -38,9 +42,11 @@ def pre_process_canny(input_video, low_threshold=100, high_threshold=200):
         img = rearrange(frame, "c h w -> h w c").cpu().numpy().astype(np.uint8)
         detected_map = cv2.Canny(img, low_threshold, high_threshold)
         detected_map = make_rgb(detected_map)
+
         detected_maps.append(detected_map[None])
     detected_maps = np.concatenate(detected_maps)
-    control = torch.from_numpy(detected_maps.copy()).float() / 255.0
+
+    control = torch.from_numpy(detected_maps.copy()).float() / 255
     return rearrange(control, "f h w c -> f c h w")
 
 
@@ -55,9 +61,8 @@ def create_video(frames, fps, rescale=False, path=None):
         frame = torchvision.utils.make_grid(torch.Tensor(k), nrow=4)
         if rescale:
             frame = (frame + 1) / 2
-        frame = (frame * 255).numpy().astype(np.uint8)
 
-        outputs.append(frame)
+        outputs.append(to_uint(frame.numpy()))
 
     imageio.mimsave(path, outputs, fps=fps)
     return path

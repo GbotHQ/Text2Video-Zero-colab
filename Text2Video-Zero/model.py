@@ -73,13 +73,13 @@ class Model:
             seed = self.generator.seed()
         kwargs.pop("generator", "")
 
-        length = (
+        n_frames = (
             kwargs["image"].shape[0] if "image" in kwargs else kwargs["video_length"]
         )
 
         assert "prompt" in kwargs
-        prompt = [kwargs.pop("prompt")] * length
-        negative_prompt = [kwargs.pop("negative_prompt", "")] * length
+        prompt = [kwargs.pop("prompt")] * n_frames
+        negative_prompt = [kwargs.pop("negative_prompt", "")] * n_frames
 
         if not split_to_chunks:
             return self.run_model(
@@ -88,7 +88,7 @@ class Model:
                 **kwargs,
             )
 
-        chunk_ids = np.append(np.arange(0, length, chunk_size - 1), length)
+        chunk_ids = np.append(np.arange(0, n_frames, chunk_size - 1), n_frames)
         result = []
         for i in tqdm(range(len(chunk_ids) - 1), "Processing chunk"):
             frame_ids = [0] + list(range(chunk_ids[i], chunk_ids[i + 1]))
@@ -142,7 +142,8 @@ class Model:
         )
         control = utils.pre_process_canny(video, low_threshold, high_threshold).to(self.device, self.dtype)
 
-        f, _, h, w = video.shape
+        n_frames = video.shape[0]
+        h, w = video.shape[2:]
         self.generator.manual_seed(seed)
         latents = torch.randn(
             (1, 4, h // 8, w // 8),
@@ -150,7 +151,7 @@ class Model:
             device=self.device,
             generator=self.generator,
         )
-        latents = latents.repeat(f, 1, 1, 1)
+        latents = latents.repeat(n_frames, 1, 1, 1)
         result = self.inference(
             image=control,
             prompt=prompt,
