@@ -1,10 +1,14 @@
+import torch
+
 import video_io
 import video_canny
 from model import Model
 
 
+model = Model(device="cuda", dtype=torch.float16)
+
+
 def process_controlnet_canny(
-    model: Model,
     video_path,
     prompt,
     negative_prompt,
@@ -20,9 +24,7 @@ def process_controlnet_canny(
     use_cf_attn=True,
     save_path=None,
 ):
-    video, fps = video_io.prepare_video(
-        video_path, model.device, model.dtype
-    )
+    video, fps = video_io.prepare_video(video_path, model.device, model.dtype)
     video = video_io.resample_video(video, resolution)
     canny = video_canny.canny(video, low_threshold, high_threshold).to(
         model.device, model.dtype

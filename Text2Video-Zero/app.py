@@ -1,11 +1,10 @@
 import gradio as gr
 import torch
 
-from model import Model
 from main import process_controlnet_canny
 
 
-def create_demo(model: Model):
+def create_demo():
     with gr.Blocks() as demo:
         with gr.Row():
             gr.Markdown("## Text and Canny-Edge Conditional Video Generation")
@@ -37,7 +36,6 @@ def create_demo(model: Model):
                 result = gr.Video(label="Generated Video").style(height="auto")
 
         inputs = [
-            model,
             input_video,
             prompt,
             negative_prompt,
@@ -54,9 +52,7 @@ def create_demo(model: Model):
 
 
 if __name__ == "__main__":
-    model = Model(device="cuda", dtype=torch.float16)
-
-    _, _, link = create_demo(model).launch(
+    _, _, link = create_demo().launch(
         file_directories=["temporal"], debug=True, share=True
     )
     print(link)
