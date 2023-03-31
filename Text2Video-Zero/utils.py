@@ -1,24 +1,40 @@
 import os
 
 import numpy as np
+import cv2
+
 import torch
 import torchvision
 from torchvision.transforms import Resize, InterpolationMode
 import imageio
 from einops import rearrange
-from annotator.util import HWC3
-from annotator.canny import CannyDetector
 import decord
 
 
-apply_canny = CannyDetector()
+def HWC3(x):
+    assert x.dtype == np.uint8
+    if x.ndim == 2:
+        x = x[:, :, None]
+    assert x.ndim == 3
+    channel = x.shape[2]
+    assert channel in [1, 3, 4]
+    if channel == 3:
+        return x
+    if channel == 1:
+        return np.concatenate([x, x, x], axis=2)
+    if channel == 4:
+        color = x[:, :, 0:3].astype(np.float32)
+        alpha = x[:, :, 3:4].astype(np.float32) / 255.0
+        y = color * alpha + 255.0 * (1.0 - alpha)
+        y = y.clip(0, 255).astype(np.uint8)
+        return y
 
 
 def pre_process_canny(input_video, low_threshold=100, high_threshold=200):
     detected_maps = []
     for frame in input_video:
         img = rearrange(frame, "c h w -> h w c").cpu().numpy().astype(np.uint8)
-        detected_map = apply_canny(img, low_threshold, high_threshold)
+        detected_map = cv2.Canny(img, low_threshold, high_threshold)
         detected_map = HWC3(detected_map)
         detected_maps.append(detected_map[None])
     detected_maps = np.concatenate(detected_maps)
@@ -84,11 +100,10 @@ def prepare_video(
     # resample to resolution
     _, h, w, _ = video.shape
     hw = np.array((h, w), np.int32)
-    scale = np.amax(hw) / resolution
-    hw = (hw // scale).astype(np.int32)
+    hw = (hw // (np.amax(hw) / resolution)).astype(np.int32)
     hw -= hw % 8
 
-    video = Resize(hw, interpolation=InterpolationMode.BILINEAR, antialias=True)(video)
+    video = Resize((hw[0], hw[1]), interpolation=InterpolationMode.BILINEAR, antialias=True)(video)
     return video / 127.5 - 1.0 if normalize else video, output_fps
 
 
