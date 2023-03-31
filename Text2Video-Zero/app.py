@@ -79,16 +79,21 @@ def resampling():
     return demo
 
 
-def main():
+def create_demo():
     with gr.Blocks() as demo:
         with gr.Tab("Canny Video to Video"):
             canny_video_to_video()
         with gr.Tab("Video FPS and Resolution"):
             resampling()
+    return demo
 
 
-if __name__ == "__main__":
-    _, _, link = main().launch(
+def launch(demo):
+    _, _, link = demo.launch(
         file_directories=["temporal"], debug=True, share=True
     )
     print(link)
+
+
+if __name__ == "__main__":
+    launch(create_demo())
