@@ -69,9 +69,15 @@ def prepare_video(
     return video, output_fps
 
 
-def resample_video(video, resolution):
+def resample_video(video, resolution: int, max_mode: bool):
     hw = np.array(video.shape[2:], np.int32)
-    hw = (hw // (np.amax(hw) / resolution)).astype(np.int32)
+
+    scale = np.amax(hw)
+    if max_mode:
+        scale = np.amin(hw)
+    scale = scale / resolution
+
+    hw = (hw // scale).astype(np.int32)
     hw -= hw % 8
 
     video = Resize(

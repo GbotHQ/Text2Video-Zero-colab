@@ -1,14 +1,10 @@
 import gradio as gr
-import torch
 
-from main import process_controlnet_canny
+from main import controlnet_video_to_video, resample_video
 
 
-def create_demo():
+def canny_video_to_video():
     with gr.Blocks() as demo:
-        with gr.Row():
-            gr.Markdown("## Text and Canny-Edge Conditional Video Generation")
-
         with gr.Row():
             with gr.Column():
                 input_video = gr.Video(
@@ -44,15 +40,55 @@ def create_demo():
         ]
 
         run_button.click(
-            fn=process_controlnet_canny,
+            fn=controlnet_video_to_video,
             inputs=inputs,
             outputs=result,
         )
     return demo
 
 
+def resampling():
+    with gr.Blocks() as demo:
+        with gr.Row():
+            with gr.Column():
+                input_video = gr.Video(
+                    label="Input Video", source="upload", format="mp4", visible=True
+                ).style(height="auto")
+            with gr.Column():
+                resolution = gr.Number(
+                    label="Resolution", minimum=256, maximum=1024, value=512, precision=0
+                )
+                fps = gr.Number(
+                    label="FPS", minimum=0, maximum=30, value=4, precision=0
+                )
+                run_button = gr.Button(label="Run")
+            with gr.Column():
+                result = gr.Video(label="Generated Video").style(height="auto")
+
+        inputs = [
+            input_video,
+            resolution,
+            fps,
+        ]
+
+        run_button.click(
+            fn=resample_video,
+            inputs=inputs,
+            outputs=result,
+        )
+    return demo
+
+
+def main():
+    with gr.Blocks() as demo:
+        with gr.Tab("Canny Video to Video"):
+            canny_video_to_video()
+        with gr.Tab("Video FPS and Resolution"):
+            resampling()
+
+
 if __name__ == "__main__":
-    _, _, link = create_demo().launch(
+    _, _, link = main().launch(
         file_directories=["temporal"], debug=True, share=True
     )
     print(link)

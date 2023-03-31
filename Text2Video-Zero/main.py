@@ -8,7 +8,7 @@ from model import Model
 model = Model(device="cuda", dtype=torch.float16)
 
 
-def process_controlnet_canny(
+def controlnet_video_to_video(
     video_path,
     prompt,
     negative_prompt,
@@ -20,16 +20,14 @@ def process_controlnet_canny(
     eta=0.0,
     low_threshold=100,
     high_threshold=200,
-    resolution=512,
     use_cf_attn=True,
     save_path=None,
 ):
     video, fps = video_io.prepare_video(video_path, model.device, model.dtype)
-    video = video_io.resample_video(video, resolution)
     canny = video_canny.canny(video, low_threshold, high_threshold).to(
         model.device, model.dtype
     )
-    result = model.video_to_video(
+    video = model.video_to_video(
         video,
         canny,
         prompt,
@@ -42,4 +40,15 @@ def process_controlnet_canny(
         eta,
         use_cf_attn,
     )
-    return video_io.create_video(result, fps, path=save_path)
+    return video_io.create_video(video, fps, path=save_path)
+
+
+def resample_video(
+    video_path,
+    resolution=512,
+    fps=4,
+    save_path=None,
+):
+    video, fps = video_io.prepare_video(video_path, model.device, model.dtype)
+    video = video_io.resample_video(video, resolution)
+    return video_io.create_video(video, fps, path=save_path)
