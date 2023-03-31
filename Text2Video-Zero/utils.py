@@ -87,6 +87,7 @@ def prepare_video(
     start_f_ind = start_t * initial_fps
     end_f_ind = end_t * initial_fps
     num_f = (end_t - start_t) * output_fps
+
     sample_idx = np.linspace(
         int(start_f_ind), int(end_f_ind), int(num_f), endpoint=False
     ).astype(int)
@@ -105,13 +106,7 @@ def prepare_video(
     video = Resize(
         (hw[0], hw[1]), interpolation=InterpolationMode.BILINEAR, antialias=True
     )(video)
-    return video / 127.5 - 1.0 if normalize else video, output_fps
-
-
-def post_process_gif(list_of_results, image_resolution):
-    output_file = "/tmp/ddxk.gif"
-    imageio.mimsave(output_file, list_of_results, fps=4)
-    return output_file
+    return (video / 127.5 - 1.0 if normalize else video), output_fps
 
 
 class CrossFrameAttnProcessor:
@@ -140,9 +135,11 @@ class CrossFrameAttnProcessor:
             # former_frame_index = torch.arange(video_length) - 1
             # former_frame_index[0] = 0
             former_frame_index = [0] * video_length
+
             key = rearrange(key, "(b f) d c -> b f d c", f=video_length)
             key = key[:, former_frame_index]
             key = rearrange(key, "b f d c -> (b f) d c")
+
             value = rearrange(value, "(b f) d c -> b f d c", f=video_length)
             value = value[:, former_frame_index]
             value = rearrange(value, "b f d c -> (b f) d c")

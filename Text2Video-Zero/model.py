@@ -1,6 +1,8 @@
 import gc
 import numpy as np
 
+import tqdm
+
 import torch
 from diffusers import StableDiffusionControlNetPipeline, ControlNetModel
 from diffusers.schedulers import DDIMScheduler
@@ -33,26 +35,31 @@ class Model:
             .to(self.dtype)
         )
 
+    def run_model(self, prompt, negative_prompt, **kwargs):
+        return self.pipe(
+            prompt=prompt,
+            negative_prompt=negative_prompt,
+            generator=self.generator,
+            **kwargs,
+        ).images
+
     def inference_chunk(self, frame_ids, **kwargs):
         if not self.pipe:
             return
 
         prompt = np.array(kwargs.pop("prompt"))
         negative_prompt = np.array(kwargs.pop("negative_prompt", ""))
-        latents = None
 
         if "latents" in kwargs:
-            latents = kwargs.pop("latents")[frame_ids]
+            kwargs["latents"] = kwargs["latents"][frame_ids]
         if "image" in kwargs:
             kwargs["image"] = kwargs["image"][frame_ids]
         if "video_length" in kwargs:
             kwargs["video_length"] = len(frame_ids)
 
-        return self.pipe(
+        return self.run_model(
             prompt=prompt[frame_ids].tolist(),
             negative_prompt=negative_prompt[frame_ids].tolist(),
-            latents=latents,
-            generator=self.generator,
             **kwargs,
         )
 
@@ -70,28 +77,25 @@ class Model:
         negative_prompt = [kwargs.pop("negative_prompt", "")] * f
 
         if not split_to_chunks:
-            return self.pipe(
+            return self.run_model(
                 prompt=prompt,
                 negative_prompt=negative_prompt,
-                generator=self.generator,
                 **kwargs,
-            ).images
+            )
 
         chunk_ids = np.arange(0, f, chunk_size - 1)
+        chunk_ids = np.append(chunk_ids, f)
         result = []
-        for i in range(len(chunk_ids)):
-            ch_start = chunk_ids[i]
-            ch_end = f if i == len(chunk_ids) - 1 else chunk_ids[i + 1]
-            frame_ids = [0] + list(range(ch_start, ch_end))
+        for i in tqdm(range(len(chunk_ids) - 1), "Processing chunk"):
+            frame_ids = [0] + list(range(chunk_ids[i], chunk_ids[i + 1]))
             self.generator.manual_seed(seed)
-            print(f"Processing chunk {i + 1} / {len(chunk_ids)}")
             result.append(
                 self.inference_chunk(
                     frame_ids=frame_ids,
                     prompt=prompt,
                     negative_prompt=negative_prompt,
                     **kwargs,
-                ).images[1:]
+                )[1:]
             )
         return np.concatenate(result)
 
