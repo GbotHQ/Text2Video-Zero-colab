@@ -29,7 +29,7 @@ def create_demo():
                         label="ControlNet Strength",
                         minimum=0,
                         maximum=2,
-                        value=1,
+                        value=0.6,
                         step=0.1,
                     )
             with gr.Column():
