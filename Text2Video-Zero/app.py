@@ -22,6 +22,9 @@ def create_demo(model: Model):
                     chunk_size = gr.Slider(
                         label="Chunk size", minimum=2, maximum=8, value=8, step=1
                     )
+                    controlnet_conditioning_scale = gr.Slider(
+                        label="ControlNet Strength", minimum=0, maximum=2, value=1, step=0.1
+                    )
             with gr.Column():
                 result = gr.Video(label="Generated Video").style(height="auto")
 
@@ -30,6 +33,7 @@ def create_demo(model: Model):
             prompt,
             negative_prompt,
             chunk_size,
+            controlnet_conditioning_scale,
         ]
 
         run_button.click(

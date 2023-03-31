@@ -11,23 +11,25 @@ from einops import rearrange
 import decord
 
 
-def HWC3(x):
-    assert x.dtype == np.uint8
-    if x.ndim == 2:
-        x = x[:, :, None]
-    assert x.ndim == 3
-    channel = x.shape[2]
+def lerp(a, b, alpha):
+    return a * (1 - alpha) + b * alpha
+
+
+def make_rgb(arr):
+    assert arr.dtype == np.uint8
+    if arr.ndim == 2:
+        arr = arr[:, :, None]
+    assert arr.ndim == 3
+    channel = arr.shape[2]
     assert channel in [1, 3, 4]
-    if channel == 3:
-        return x
+
     if channel == 1:
-        return np.concatenate([x, x, x], axis=2)
-    if channel == 4:
-        color = x[:, :, 0:3].astype(np.float32)
-        alpha = x[:, :, 3:4].astype(np.float32) / 255.0
-        y = color * alpha + 255.0 * (1.0 - alpha)
-        y = y.clip(0, 255).astype(np.uint8)
-        return y
+        arr = np.concatenate((arr,) * 3, axis=2)
+    elif channel == 4:
+        color = arr[:, :, :3].astype(np.float32)
+        alpha = arr[:, :, 3].astype(np.float32) / 255
+        arr = np.clip(lerp(255, color, alpha), 0, 255).astype(np.uint8)
+    return arr
 
 
 def pre_process_canny(input_video, low_threshold=100, high_threshold=200):
@@ -35,7 +37,7 @@ def pre_process_canny(input_video, low_threshold=100, high_threshold=200):
     for frame in input_video:
         img = rearrange(frame, "c h w -> h w c").cpu().numpy().astype(np.uint8)
         detected_map = cv2.Canny(img, low_threshold, high_threshold)
-        detected_map = HWC3(detected_map)
+        detected_map = make_rgb(detected_map)
         detected_maps.append(detected_map[None])
     detected_maps = np.concatenate(detected_maps)
     control = torch.from_numpy(detected_maps.copy()).float() / 255.0
@@ -67,30 +69,29 @@ def prepare_video(
     device,
     dtype,
     normalize=True,
-    start_t: float = 0,
-    end_t: float = -1,
-    output_fps: int = -1,
+    start_time: float = 0,
+    end_time: float = None,
+    output_fps: int = None,
 ):
     vr = decord.VideoReader(video_path)
     initial_fps = vr.get_avg_fps()
 
-    if output_fps == -1:
+    if not output_fps:
         output_fps = int(initial_fps)
 
-    if end_t == -1:
-        end_t = len(vr) / initial_fps
-    end_t = min(len(vr) / initial_fps, end_t)
+    length = len(vr) / initial_fps
+    end_time = min(length, end_time) if end_time else length
 
-    assert 0 <= start_t < end_t
+    assert 0 <= start_time < end_time
     assert output_fps > 0
 
-    start_f_ind = start_t * initial_fps
-    end_f_ind = end_t * initial_fps
-    num_f = (end_t - start_t) * output_fps
+    start_frame_index = int(start_time * initial_fps)
+    end_frame_index = int(end_time * initial_fps)
+    n_frames = int((end_time - start_time) * output_fps)
 
     sample_idx = np.linspace(
-        int(start_f_ind), int(end_f_ind), int(num_f), endpoint=False
-    ).astype(int)
+        start_frame_index, end_frame_index, n_frames, endpoint=False
+    ).astype(np.int32)
     video = vr.get_batch(sample_idx)
 
     video = video.detach().cpu().numpy() if torch.is_tensor(video) else video.asnumpy()
@@ -106,7 +107,11 @@ def prepare_video(
     video = Resize(
         (hw[0], hw[1]), interpolation=InterpolationMode.BILINEAR, antialias=True
     )(video)
-    return (video / 127.5 - 1.0 if normalize else video), output_fps
+
+    if normalize:
+        video = video / 127.5 - 1.0
+
+    return video, output_fps
 
 
 class CrossFrameAttnProcessor:
@@ -116,24 +121,24 @@ class CrossFrameAttnProcessor:
     def __call__(
         self, attn, hidden_states, encoder_hidden_states=None, attention_mask=None
     ):
+        is_cross_attention = encoder_hidden_states is not None
+
         batch_size, sequence_length, _ = hidden_states.shape
         attention_mask = attn.prepare_attention_mask(
             attention_mask, sequence_length, batch_size
         )
         query = attn.to_q(hidden_states)
 
-        is_cross_attention = encoder_hidden_states is not None
         if encoder_hidden_states is None:
             encoder_hidden_states = hidden_states
         elif attn.cross_attention_norm:
             encoder_hidden_states = attn.norm_cross(encoder_hidden_states)
         key = attn.to_k(encoder_hidden_states)
         value = attn.to_v(encoder_hidden_states)
+
         # Sparse Attention
         if not is_cross_attention:
             video_length = key.size()[0] // self.unet_chunk_size
-            # former_frame_index = torch.arange(video_length) - 1
-            # former_frame_index[0] = 0
             former_frame_index = [0] * video_length
 
             key = rearrange(key, "(b f) d c -> b f d c", f=video_length)
